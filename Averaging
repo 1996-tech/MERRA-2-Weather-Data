@@ -1,0 +1,54 @@
+import pandas as pd
+import numpy as np
+from datetime import datetime
+
+def process_temperature_data(input_file):
+    # Read the CSV file
+    df = pd.read_csv(input_file)
+
+    # Daily averages (no averaging needed as we keep original hourly data)
+    daily_df = df.copy()
+
+    # Group columns by date for daily averages
+    daily_averages = pd.DataFrame()
+    daily_averages[['latitude', 'longitude']] = df[['latitude', 'longitude']]
+
+    date_groups = {}
+    for col in df.columns:
+        if col not in ['latitude', 'longitude']:
+            date = col.split('T')[0]
+            if date not in date_groups:
+                date_groups[date] = []
+            date_groups[date].append(col)
+
+    for date, columns in date_groups.items():
+        daily_averages[date] = df[columns].mean(axis=1)
+
+    # Monthly averages
+    monthly_averages = pd.DataFrame()
+    monthly_averages[['latitude', 'longitude']] = df[['latitude', 'longitude']]
+
+    month_groups = {}
+    for date in date_groups.keys():
+        month = date[:7]  # YYYY-MM
+        if month not in month_groups:
+            month_groups[month] = []
+        month_groups[month].append(date)
+
+    for month, dates in month_groups.items():
+        monthly_averages[month] = daily_averages[dates].mean(axis=1)
+
+    # Annual average
+    annual_averages = pd.DataFrame()
+    annual_averages[['latitude', 'longitude']] = df[['latitude', 'longitude']]
+    annual_averages['2016'] = monthly_averages.iloc[:, 2:].mean(axis=1)
+
+    # Save to CSV files
+    daily_averages.to_csv('daily_averages.csv', index=False, float_format='%.2f')
+    monthly_averages.to_csv('monthly_averages.csv', index=False, float_format='%.2f')
+    annual_averages.to_csv('annual_average.csv', index=False, float_format='%.2f')
+
+# Usage
+if __name__ == "__main__":
+    input_file = "temperature_matrix.csv"
+    process_temperature_data(input_file)
