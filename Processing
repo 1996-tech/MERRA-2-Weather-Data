@@ -113,3 +113,123 @@ if __name__ == "__main__":
     
     # Save and display information
     save_wind_matrix(wind_matrix)
+
+
+
+## alternative
+
+import xarray as xr
+import pandas as pd
+import numpy as np
+from datetime import datetime
+import os
+import glob
+
+def create_temperature_matrix(lat_array, lon_array, download_dir='download_temperature2', year=2017):
+    """
+    Creates a temperature matrix from MERRA-2 data with lat/lon pairs in rows and timestamps in columns.
+    
+    Args:
+        lat_array (list): List of latitude values from dimension file
+        lon_array (list): List of longitude values from dimension file
+        download_dir (str): Directory containing downloaded temperature NC4 files
+        year (int): The year of the data being processed
+        
+    Returns:
+        pd.DataFrame: Matrix with MultiIndex (lat, lon) and timestamp columns
+    """
+    # Get list of all downloaded files
+    nc_files = sorted(glob.glob(os.path.join(download_dir, f'MERRA2_*.nc4')))
+    if not nc_files:
+        raise ValueError(f"No MERRA2 .nc4 files found in {download_dir}")
+    
+    # Initialize empty list to store data
+    temperature_data_list = []
+    
+    # Process each file
+    for nc_file in nc_files:
+        try:
+            # Explicitly specify netcdf4 engine
+            with xr.open_dataset(nc_file, engine='netcdf4') as ds:
+                # Extract the date from filename
+                date_str = os.path.basename(nc_file).split('.')[-2]  # Format: YYYYMMDD
+                
+                # Get timestamps for this file (24 hours)
+                base_date = pd.to_datetime(f"{date_str}", format="%Y%m%d")
+                timestamps = [base_date + pd.Timedelta(hours=h) for h in range(24)]
+                
+                # Extract temperature data (T2M - 2-meter air temperature)
+                temperature = ds['T2M'].values
+                
+                # For each timestamp in the file (24 hours)
+                for t_idx, timestamp in enumerate(timestamps):
+                    # Get temperature slice for this timestamp
+                    temperature_slice = temperature[t_idx]  # Fixed: using temperature instead of temperature_data
+                    
+                    # Create a DataFrame for this timestamp using the provided lat/lon arrays
+                    for lat_idx, lat in enumerate(lat_array):
+                        for lon_idx, lon in enumerate(lon_array):
+                            temperature_data_list.append({
+                                'latitude': float(lat),
+                                'longitude': float(lon),
+                                'temperature': float(temperature_slice[lat_idx, lon_idx]),  # Fixed: using temperature_slice
+                                'timestamp': timestamp
+                            })
+        except Exception as e:
+            print(f"Error processing file {nc_file}: {str(e)}")
+            continue
+    
+    if not temperature_data_list:
+        raise ValueError("No data was successfully processed from the files")
+    
+    # Create DataFrame from all collected data
+    df_combined = pd.DataFrame(temperature_data_list)
+    
+    # Create the matrix using pivot
+    matrix = df_combined.pivot_table(
+        index=['latitude', 'longitude'],
+        columns='timestamp',
+        values='temperature'
+    )
+    
+    # Sort the index for better organization
+    matrix.sort_index(level=['latitude', 'longitude'], ascending=[False, True], inplace=True)
+    
+    return matrix
+
+def save_temperature_matrix(matrix, output_file='washington_temperature_matrix2017.csv'):
+    """
+    Saves the temperature matrix to a CSV file and prints summary statistics
+    
+    Args:
+        matrix (pd.DataFrame): Temperature matrix to save
+        output_file (str): Path to save the CSV file
+    """
+    # Save to CSV
+    matrix.to_csv(output_file)
+    
+    # Print summary information
+    print(f"\nMatrix Information:")
+    print(f"Dimensions: {matrix.shape[0]} locations × {matrix.shape[1]} timestamps")
+    print(f"Date range: {matrix.columns.min()} to {matrix.columns.max()}")
+    print(f"Temperature range: {matrix.min().min():.1f}K to {matrix.max().max():.1f}K")
+    
+    # Print coordinate ranges
+    lat_range = matrix.index.get_level_values('latitude').unique()
+    lon_range = matrix.index.get_level_values('longitude').unique()
+    print(f"\nLatitude range: {lat_range.min():.3f}°N to {lat_range.max():.3f}°N")
+    print(f"Longitude range: {lon_range.min():.3f}°E to {lon_range.max():.3f}°E")
+    
+    print(f"\nSaved to: {output_file}")
+    
+    # Show sample of the matrix
+    print("\nSample of the matrix (first 5 locations, first 5 timestamps):")
+    print(matrix.iloc[:5, :5])
+
+# Example usage:
+if __name__ == "__main__":
+    # Create the matrix using the lat_array and lon_array from the dimension file
+    temperature_matrix = create_temperature_matrix(lat_array, lon_array, year=2017)
+    
+    # Save and display information
+    save_temperature_matrix(temperature_matrix)
